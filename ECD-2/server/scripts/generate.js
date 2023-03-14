@@ -1,13 +1,50 @@
-/**
- * This script is used to generate private/public key pairs,
- * in order to initialize user wallets on the client side and
- * user address on the server side.
- */
-const secp = require("ethereum-cryptography/secp256k1");
-const { toHex } = require("ethereum-cryptography/utils");
+const express = require("express");
+const cors = require("cors");
+const crypto = require("./crypto");
 
-const privateKey = secp.utils.randomPrivateKey();
-const publicKey = secp.getPublicKey(privateKey);
+const app = express();
+const port = 3042;
 
-console.log("private key : ", toHex(privateKey));
-console.log("public key  : ", toHex(publicKey));
+app.use(cors());
+app.use(express.json());
+
+const balances = new Map([
+  ["C148FBED965CA433B1EBBDBDC7757DCEC65C3275", 100], // bob
+  ["31A36F79F64B30A579EAE44382DFEFC42D4FD336", 50], // alice
+  ["0FE026F581549F30C5F49A409639E4F84D0DB5B0", 75], // charles
+]);
+
+app.get("/balance/:address", (req, res) => {
+  const { address } = req.params;
+  const balance = balances.get(address) || 0;
+  res.send({ balance });
+});
+
+app.post("/send", (req, res) => {
+  const { message, signature } = req.body;
+  const { recipient, amount } = message;
+
+  const pubKey = crypto.signatureToPubKey(message, signature);
+  const sender = crypto.pubKeyToAddress(pubKey);
+
+  setInitialBalance(sender);
+  setInitialBalance(recipient);
+
+  if (balances.get(sender) < amount) {
+    res.status(400).send({ message: "Not enough funds!" });
+  } else {
+    balances.set(sender, balances.get(sender) - amount);
+    balances.set(recipient, balances.get(recipient) + amount);
+    res.send({ balance: balances.get(sender) });
+  }
+});
+
+app.listen(port, () => {
+  console.log(`Listening on port ${port}!`);
+});
+
+function setInitialBalance(address) {
+  if (!balances[address]) {
+    balances[address] = 0;
+  }
+}
